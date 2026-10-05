@@ -1,5 +1,5 @@
 import React from 'react';
-import { Volume2, VolumeX, Flame, Trophy, Printer, Users, Grid, Zap, Map } from 'lucide-react';
+import { Volume2, VolumeX, Flame, Trophy, Printer, Users, Grid, Zap, Map, Gamepad2, Sliders } from 'lucide-react';
 import { ActiveTab, UserStats } from '../types';
 import { sound } from '../utils/audio';
 
@@ -9,6 +9,7 @@ interface NavbarProps {
   setActiveTab: (tab: ActiveTab) => void;
   onOpenAvatarModal: () => void;
   onOpenPrintModal: () => void;
+  onOpenOptionsModal: () => void;
   onToggleSound: () => void;
   solvedCount: number;
   totalCount: number;
@@ -20,6 +21,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   setActiveTab,
   onOpenAvatarModal,
   onOpenPrintModal,
+  onOpenOptionsModal,
   onToggleSound,
   solvedCount,
   totalCount,
@@ -47,8 +49,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
         </div>
 
-        {/* Live Gamification Bar: Score, Streak, Solved */}
-        <div className="flex items-center gap-2 md:gap-4 bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700/60 shadow-inner">
+        {/* Live Gamification Bar: Score, Gems, Streak, Solved */}
+        <div className="flex items-center gap-2 md:gap-3 bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700/60 shadow-inner">
           {/* Score */}
           <div className="flex items-center gap-1.5" title="Total Points">
             <span className="text-base">🪙</span>
@@ -60,7 +62,20 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          <div className="h-6 w-px bg-slate-700 mx-1" />
+          <div className="h-6 w-px bg-slate-700 mx-0.5" />
+
+          {/* Gems Currency */}
+          <div className="flex items-center gap-1.5" title="Gems for Lifelines">
+            <span className="text-base">💎</span>
+            <div>
+              <div className="text-[10px] uppercase font-bold text-slate-400 leading-none">Gems</div>
+              <div className="text-sm md:text-base font-black text-cyan-400 leading-none">
+                {stats.gems ?? 0}
+              </div>
+            </div>
+          </div>
+
+          <div className="h-6 w-px bg-slate-700 mx-0.5" />
 
           {/* Streak */}
           <div className="flex items-center gap-1.5" title="Current Streak">
@@ -73,7 +88,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          <div className="h-6 w-px bg-slate-700 mx-1" />
+          <div className="h-6 w-px bg-slate-700 mx-0.5" />
 
           {/* Progress */}
           <div className="flex items-center gap-1.5" title="Solved Riddles">
@@ -89,6 +104,19 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Player Profile & Quick Actions */}
         <div className="flex items-center gap-2">
+          {/* Options & Settings Button */}
+          <button
+            onClick={() => {
+              sound.playClick();
+              onOpenOptionsModal();
+            }}
+            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-400 transition-colors border border-slate-700/50 flex items-center gap-1.5 text-xs font-semibold"
+            title="Options, Lifeline Shop & Filters"
+          >
+            <Sliders className="w-4 h-4" />
+            <span className="hidden sm:inline">Options</span>
+          </button>
+
           {/* Audio toggle */}
           <button
             onClick={() => {
@@ -112,7 +140,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             title="Classroom Printable Worksheet & Answer Key"
           >
             <Printer className="w-4 h-4 text-sky-400" />
-            <span className="hidden md:inline">Print Sheet</span>
+            <span className="hidden md:inline">Print</span>
           </button>
 
           {/* Avatar Profile */}
@@ -125,7 +153,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             title="Change Avatar & Name"
           >
             <span className="text-lg leading-none">{stats.avatar}</span>
-            <span className="max-w-[80px] truncate">{stats.playerName}</span>
+            <span className="max-w-[75px] truncate">{stats.playerName}</span>
           </button>
         </div>
       </div>
@@ -142,6 +170,18 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <Map className="w-3.5 h-3.5" />
           <span>Riddle Quest</span>
+        </button>
+
+        <button
+          onClick={() => { sound.playClick(); setActiveTab('minigames'); }}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+            activeTab === 'minigames'
+              ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 scale-[1.02]'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+          }`}
+        >
+          <Gamepad2 className="w-3.5 h-3.5 text-pink-400" />
+          <span>Mini-Games (4)</span>
         </button>
 
         <button
@@ -165,7 +205,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           }`}
         >
           <Zap className="w-3.5 h-3.5 text-yellow-400" />
-          <span>Speed Rush (60s)</span>
+          <span>Speed Rush</span>
         </button>
 
         <button

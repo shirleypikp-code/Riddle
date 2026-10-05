@@ -1,5 +1,5 @@
 import React from 'react';
-import { Riddle, RiddleSolveRecord } from '../types';
+import { Riddle, RiddleSolveRecord, GameSettings, Powerups } from '../types';
 import { RiddleCard } from './RiddleCard';
 import { sound } from '../utils/audio';
 
@@ -9,6 +9,9 @@ interface QuestModeProps {
   solvedIds: number[];
   records: Record<number, RiddleSolveRecord>;
   currentStreak: number;
+  settings: GameSettings;
+  powerups: Powerups;
+  onUsePowerup: (type: keyof Powerups) => boolean;
   onSolve: (riddleId: number, hintsUsed: number, scoreEarned: number, usedMCQ: boolean) => void;
   onSelectIndex: (idx: number) => void;
   onNext: () => void;
@@ -21,12 +24,15 @@ export const QuestMode: React.FC<QuestModeProps> = ({
   solvedIds,
   records,
   currentStreak,
+  settings,
+  powerups,
+  onUsePowerup,
   onSolve,
   onSelectIndex,
   onNext,
   onPrev,
 }) => {
-  const currentRiddle = riddles[currentIndex];
+  const currentRiddle = riddles[currentIndex] || riddles[0];
 
   const realms = [
     { name: 'The Logic Forest', icon: '🌲', start: 1, end: 10, color: 'from-emerald-500/20 to-teal-500/10' },
@@ -123,6 +129,9 @@ export const QuestMode: React.FC<QuestModeProps> = ({
         totalRiddles={riddles.length}
         record={records[currentRiddle.id]}
         currentStreak={currentStreak}
+        settings={settings}
+        powerups={powerups}
+        onUsePowerup={onUsePowerup}
         onSolve={onSolve}
         onNext={onNext}
         onPrev={onPrev}

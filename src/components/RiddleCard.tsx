@@ -11,13 +11,18 @@ import {
   Sparkles, 
   Send, 
   Flame, 
-  Award,
+  Volume2,
+  VolumeX,
   ListFilter,
-  Type
+  Type,
+  Grid,
+  Clock,
+  Shuffle
 } from 'lucide-react';
-import { Riddle, RiddleSolveRecord } from '../types';
-import { checkAnswer, triggerConfettiBurst } from '../utils/answerChecker';
+import { Riddle, RiddleSolveRecord, GameSettings, Powerups } from '../types';
+import { checkAnswer, triggerConfettiBurst, normalizeString } from '../utils/answerChecker';
 import { sound } from '../utils/audio';
+import { speech } from '../utils/speech';
 
 interface RiddleCardProps {
   riddle: Riddle;
@@ -25,6 +30,9 @@ interface RiddleCardProps {
   totalRiddles: number;
   record?: RiddleSolveRecord;
   currentStreak: number;
+  settings: GameSettings;
+  powerups: Powerups;
+  onUsePowerup: (type: keyof Powerups) => boolean;
   onSolve: (riddleId: number, hintsUsed: number, scoreEarned: number, usedMCQ: boolean) => void;
   onNext: () => void;
   onPrev: () => void;
@@ -37,6 +45,9 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
   totalRiddles,
   record,
   currentStreak,
+  settings,
+  powerups,
+  onUsePowerup,
   onSolve,
   onNext,
   onPrev,
@@ -47,11 +58,21 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
   const [inputGuess, setInputGuess] = useState('');
   const [activeHintLevel, setActiveHintLevel] = useState<number>(record?.hintsUsed ?? 0);
   const [selectedMCQ, setSelectedMCQ] = useState<string | null>(null);
-  const [inputMode, setInputMode] = useState<'type' | 'mcq'>('type');
+  const [eliminatedOptions, setEliminatedOptions] = useState<string[]>([]);
+  const [revealedLetters, setRevealedLetters] = useState<number[]>([]);
+  const [inputMode, setInputMode] = useState<'type' | 'mcq' | 'tiles'>(settings.defaultInputMode);
   const [feedback, setFeedback] = useState<{ message: string; type: 'error' | 'success' } | null>(null);
   const [isShaking, setIsShaking] = useState(false);
   const [showConfirmReveal, setShowConfirmReveal] = useState(false);
-  const [showExplanationManual, setShowExplanationManual] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  
+  // Timer challenge (45s)
+  const [timerSeconds, setTimerSeconds] = useState(45);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Letter tiles bank
+  const [placedLetterTiles, setPlacedLetterTiles] = useState<string[]>([]);
+  const [bankLetterTiles, setBankLetterTiles] = useState<{ id: string; char: string }[]>([]);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -59,29 +80,156 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
   useEffect(() => {
     setInputGuess('');
     setSelectedMCQ(null);
+    setEliminatedOptions([]);
+    setRevealedLetters([]);
     setFeedback(null);
     setShowConfirmReveal(false);
-    setShowExplanationManual(false);
     setActiveHintLevel(record?.hintsUsed ?? 0);
+    setTimerSeconds(45);
+    speech.stop();
+    setIsSpeaking(false);
+
+    // Prepare Letter Tiles
+    const cleanWord = normalizeString(riddle.answer).toUpperCase();
+    const letters = cleanWord.split('').filter(c => /[A-Z0-9]/.test(c));
+    // Add 2 random distractors
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const distractors = [
+      alphabet[Math.floor(Math.random() * alphabet.length)],
+      alphabet[Math.floor(Math.random() * alphabet.length)],
+    ];
+    const all = [...letters, ...distractors]
+      .sort(() => 0.5 - Math.random())
+      .map((char, i) => ({ id: `${char}-${i}-${Math.random()}`, char }));
+    setBankLetterTiles(all);
+    setPlacedLetterTiles(new Array(letters.length).fill(''));
+
     if (!isSolved && inputMode === 'type') {
       setTimeout(() => inputRef.current?.focus(), 150);
     }
   }, [riddle.id, isSolved]);
 
-  const handleUnlockHint = (level: number) => {
+  // 45-Second countdown timer if enabled
+  useEffect(() => {
+    if (settings.timerEnabled && !isSolved) {
+      timerRef.current = setInterval(() => {
+        setTimerSeconds((prev) => {
+          if (prev <= 1) {
+            clearInterval(timerRef.current!);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [settings.timerEnabled, riddle.id, isSolved]);
+
+  // SpeechSynthesis read aloud
+  const handleToggleSpeak = () => {
+    if (isSpeaking) {
+      speech.stop();
+      setIsSpeaking(false);
+    } else {
+      setIsSpeaking(true);
+      sound.playClick();
+      speech.speak(riddle.question, () => {
+        setIsSpeaking(false);
+      });
+    }
+  };
+
+  const handleUnlockHint = (level: number, isFreePass: boolean = false) => {
     if (activeHintLevel < level) {
       sound.playHint();
       setActiveHintLevel(level);
     }
   };
 
-  const handleGuessSubmit = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  // Power-Up: 50:50 Lifeline
+  const handleUseFiftyFifty = () => {
+    if (eliminatedOptions.length > 0) return;
+    const canUse = onUsePowerup('fiftyFifty');
+    if (!canUse) {
+      sound.playWrong();
+      setFeedback({ message: 'Need a 50:50 Lifeline! Visit Options or spin the wheel.', type: 'error' });
+      return;
+    }
+
+    sound.playLevelUp();
+    // Keep the correct option, eliminate 2 random incorrect options
+    const correctNormalized = normalizeString(riddle.answer);
+    const incorrects = riddle.options.filter(
+      (opt) => normalizeString(opt) !== correctNormalized
+    );
+    const shuffledIncorrects = [...incorrects].sort(() => 0.5 - Math.random());
+    const toEliminate = shuffledIncorrects.slice(0, 2);
+
+    setEliminatedOptions(toEliminate);
+    setInputMode('mcq');
+    setFeedback({ message: '🎯 50:50 Activated! Two wrong options vanished!', type: 'success' });
+  };
+
+  // Power-Up: Letter Reveal
+  const handleUseLetterReveal = () => {
+    const cleanWord = normalizeString(riddle.answer).toUpperCase();
+    const unrevealedIndices = cleanWord
+      .split('')
+      .map((_, i) => i)
+      .filter((i) => !revealedLetters.includes(i));
+
+    if (unrevealedIndices.length === 0) return;
+
+    const canUse = onUsePowerup('letterReveal');
+    if (!canUse) {
+      sound.playWrong();
+      setFeedback({ message: 'Need a Letter Reveal! Visit Options or spin the wheel.', type: 'error' });
+      return;
+    }
+
+    sound.playHint();
+    const randomIndex = unrevealedIndices[Math.floor(Math.random() * unrevealedIndices.length)];
+    const newRevealed = [...revealedLetters, randomIndex];
+    setRevealedLetters(newRevealed);
+
+    // Auto-fill into input guess if in typing mode
+    const letterToReveal = cleanWord[randomIndex];
+    setFeedback({ message: `🔠 Revealed Letter '${letterToReveal}' at position ${randomIndex + 1}!`, type: 'success' });
+  };
+
+  // Power-Up: Free Hint Pass
+  const handleUseFreeHint = () => {
+    if (activeHintLevel >= 3) return;
+    const canUse = onUsePowerup('freeHint');
+    if (!canUse) {
+      sound.playWrong();
+      setFeedback({ message: 'Need a Free Hint Pass! Visit Options or spin the wheel.', type: 'error' });
+      return;
+    }
+
+    handleUnlockHint(activeHintLevel + 1, true);
+    setFeedback({ message: '💡 Free Hint Pass used! No points deducted.', type: 'success' });
+  };
+
+  // Guess submission
+  const handleGuessSubmit = (customGuess?: string) => {
     if (isSolved) return;
 
-    const guess = inputMode === 'type' ? inputGuess : (selectedMCQ ?? '');
+    let guess = '';
+    if (customGuess) {
+      guess = customGuess;
+    } else if (inputMode === 'type') {
+      guess = inputGuess;
+    } else if (inputMode === 'mcq') {
+      guess = selectedMCQ ?? '';
+    } else if (inputMode === 'tiles') {
+      guess = placedLetterTiles.join('');
+    }
+
     if (!guess.trim()) {
-      setFeedback({ message: 'Type or choose your guess first!', type: 'error' });
+      setFeedback({ message: 'Please enter or select a guess first!', type: 'error' });
       return;
     }
 
@@ -91,8 +239,8 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
       sound.playSuccess();
       triggerConfettiBurst();
 
-      // Points calculation: Base 100 - (15 per hint used), bonus for streak
-      const hintPenalty = activeHintLevel * 15;
+      // Points calculation
+      const hintPenalty = settings.practiceMode ? 0 : activeHintLevel * 15;
       const basePoints = Math.max(30, 100 - hintPenalty);
       const streakBonus = currentStreak >= 3 ? Math.min(50, currentStreak * 10) : 0;
       const finalScore = basePoints + streakBonus;
@@ -106,7 +254,7 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
     } else {
       sound.playWrong();
       setIsShaking(true);
-      setFeedback({ message: 'Not quite! Think carefully or try a hint.', type: 'error' });
+      setFeedback({ message: 'Not quite! Think carefully, use a lifeline, or unlock a hint.', type: 'error' });
       setTimeout(() => setIsShaking(false), 500);
     }
   };
@@ -114,9 +262,35 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
   const handleGiveUpAndReveal = () => {
     setShowConfirmReveal(false);
     sound.playHint();
-    // Solved with 0 points earned
     onSolve(riddle.id, 3, 0, false);
-    setShowExplanationManual(true);
+  };
+
+  // Letter Tile Bank Handlers
+  const handleBankTileTap = (tile: { id: string; char: string }) => {
+    const emptyIndex = placedLetterTiles.findIndex((t) => !t);
+    if (emptyIndex === -1) return;
+
+    sound.playClick();
+    const newPlaced = [...placedLetterTiles];
+    newPlaced[emptyIndex] = tile.char;
+    setPlacedLetterTiles(newPlaced);
+    setBankLetterTiles((prev) => prev.filter((t) => t.id !== tile.id));
+
+    // Auto-check if full
+    if (newPlaced.every(Boolean)) {
+      handleGuessSubmit(newPlaced.join(''));
+    }
+  };
+
+  const handlePlacedTileTap = (index: number) => {
+    const char = placedLetterTiles[index];
+    if (!char) return;
+
+    sound.playClick();
+    const newPlaced = [...placedLetterTiles];
+    newPlaced[index] = '';
+    setPlacedLetterTiles(newPlaced);
+    setBankLetterTiles((prev) => [...prev, { id: `${char}-${Math.random()}`, char }]);
   };
 
   // Difficulty badge styling
@@ -136,26 +310,37 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
           <span className="font-medium text-slate-300">{riddle.realmName}</span>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => { sound.playClick(); onPrev(); }}
-            disabled={currentIndex === 0}
-            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:pointer-events-none transition-colors"
-            title="Previous Riddle"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <span className="font-mono font-bold text-slate-300">
-            {currentIndex + 1} / {totalRiddles}
-          </span>
-          <button
-            onClick={() => { sound.playClick(); onNext(); }}
-            disabled={currentIndex === totalRiddles - 1}
-            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:pointer-events-none transition-colors"
-            title="Next Riddle"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
+        <div className="flex items-center gap-3">
+          {settings.timerEnabled && !isSolved && (
+            <div className={`flex items-center gap-1 font-mono font-bold ${
+              timerSeconds <= 10 ? 'text-rose-400 animate-pulse' : 'text-amber-400'
+            }`}>
+              <Clock className="w-3.5 h-3.5" />
+              <span>{timerSeconds}s</span>
+            </div>
+          )}
+
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => { sound.playClick(); onPrev(); }}
+              disabled={currentIndex === 0}
+              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+              title="Previous Riddle"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="font-mono font-bold text-slate-300">
+              {currentIndex + 1} / {totalRiddles}
+            </span>
+            <button
+              onClick={() => { sound.playClick(); onNext(); }}
+              disabled={currentIndex === totalRiddles - 1}
+              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:pointer-events-none transition-colors"
+              title="Next Riddle"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -177,14 +362,37 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
             <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-700/40 text-slate-300 border border-slate-700">
               {riddle.category}
             </span>
+            {settings.practiceMode && (
+              <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                🛡️ Practice Mode
+              </span>
+            )}
           </div>
 
-          {isSolved && (
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold animate-pulse">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <span>Solved (+{record?.scoreEarned ?? 0} pts)</span>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Read Aloud Button */}
+            <button
+              onClick={handleToggleSpeak}
+              className={`p-1.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-colors ${
+                isSpeaking
+                  ? 'bg-amber-500 text-slate-950 border-amber-400 animate-pulse'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+              }`}
+              title="Read Riddle Aloud"
+            >
+              <Volume2 className="w-4 h-4" />
+              <span className="text-[11px] hidden sm:inline">
+                {isSpeaking ? 'Reading...' : 'Listen'}
+              </span>
+            </button>
+
+            {isSolved && (
+              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold animate-pulse">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                <span>Solved (+{record?.scoreEarned ?? 0} pts)</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* The Riddle Question */}
@@ -254,20 +462,74 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
           )}
         </AnimatePresence>
 
+        {/* UNSOLVED: Lifelines Bar */}
+        {!isSolved && (
+          <div className="px-6 pb-2">
+            <div className="p-3 rounded-2xl bg-slate-900/60 border border-slate-700/60 flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-amber-400" />
+                <span>Lifeline Power-Ups:</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {/* 50:50 */}
+                <button
+                  onClick={handleUseFiftyFifty}
+                  disabled={eliminatedOptions.length > 0}
+                  className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold flex items-center gap-1 text-purple-300 disabled:opacity-40"
+                  title="Remove 2 wrong multiple choice answers"
+                >
+                  <span>🎯 50:50</span>
+                  <span className="text-[10px] bg-purple-500/20 px-1.5 py-0.5 rounded-full font-mono">
+                    {powerups.fiftyFifty}
+                  </span>
+                </button>
+
+                {/* Letter Reveal */}
+                <button
+                  onClick={handleUseLetterReveal}
+                  className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold flex items-center gap-1 text-pink-300"
+                  title="Reveal a random letter"
+                >
+                  <span>🔠 Reveal</span>
+                  <span className="text-[10px] bg-pink-500/20 px-1.5 py-0.5 rounded-full font-mono">
+                    {powerups.letterReveal}
+                  </span>
+                </button>
+
+                {/* Free Hint */}
+                <button
+                  onClick={handleUseFreeHint}
+                  disabled={activeHintLevel >= 3}
+                  className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold flex items-center gap-1 text-yellow-300 disabled:opacity-40"
+                  title="Unlock hint without point loss"
+                >
+                  <span>💡 Free Hint</span>
+                  <span className="text-[10px] bg-yellow-500/20 px-1.5 py-0.5 rounded-full font-mono">
+                    {powerups.freeHint}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* UNSOLVED: Progressive Hint System */}
         {!isSolved && (
-          <div className="px-6 pb-4">
+          <div className="px-6 py-3">
             <div className="flex items-center justify-between mb-2">
               <div className="text-xs font-bold text-slate-400 flex items-center gap-1.5">
                 <Lightbulb className="w-4 h-4 text-amber-400" />
-                <span>Need a Clue? Progressive Hints</span>
+                <span>Progressive Hints</span>
               </div>
-              <span className="text-[11px] text-slate-500">(-15 pts per hint)</span>
+              <span className="text-[11px] text-slate-500">
+                {settings.practiceMode ? 'Free in Practice Mode' : '(-15 pts per hint)'}
+              </span>
             </div>
 
             {/* 3 Progressive Hint Toggles */}
             <div className="space-y-2">
-              {/* Hint 1: Clue / Category */}
+              {/* Hint 1 */}
               <div className="rounded-xl border border-slate-700/70 bg-slate-800/50 overflow-hidden">
                 {activeHintLevel >= 1 ? (
                   <div className="p-3 text-sm text-amber-200 bg-amber-500/10 flex items-start gap-2.5">
@@ -277,17 +539,17 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
                 ) : (
                   <button
                     onClick={() => handleUnlockHint(1)}
-                    className="w-full px-4 py-2.5 text-xs font-bold text-slate-300 hover:text-amber-400 hover:bg-slate-700/50 flex items-center justify-between transition-colors"
+                    className="w-full px-4 py-2 text-xs font-bold text-slate-300 hover:text-amber-400 hover:bg-slate-700/50 flex items-center justify-between transition-colors"
                   >
-                    <span className="flex items-center gap-2">
-                      <span>💡 Hint 1: Conceptual Clue</span>
+                    <span>💡 Hint 1: Conceptual Clue</span>
+                    <span className="text-amber-400 text-[11px] font-mono">
+                      {settings.practiceMode ? 'Free' : 'Unlock (-15 pts)'}
                     </span>
-                    <span className="text-amber-400 text-[11px] font-mono">Unlock (-15 pts)</span>
                   </button>
                 )}
               </div>
 
-              {/* Hint 2: Letter Anatomy */}
+              {/* Hint 2 */}
               <div className="rounded-xl border border-slate-700/70 bg-slate-800/50 overflow-hidden">
                 {activeHintLevel >= 2 ? (
                   <div className="p-3 text-sm text-sky-200 bg-sky-500/10 flex items-start gap-2.5">
@@ -298,7 +560,7 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
                   <button
                     onClick={() => handleUnlockHint(2)}
                     disabled={activeHintLevel < 1}
-                    className={`w-full px-4 py-2.5 text-xs font-bold flex items-center justify-between transition-colors ${
+                    className={`w-full px-4 py-2 text-xs font-bold flex items-center justify-between transition-colors ${
                       activeHintLevel < 1 
                         ? 'text-slate-600 cursor-not-allowed bg-slate-900/40' 
                         : 'text-slate-300 hover:text-sky-400 hover:bg-slate-700/50'
@@ -306,13 +568,13 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
                   >
                     <span>🔍 Hint 2: Word Structure & Letters</span>
                     <span className="text-sky-400 text-[11px] font-mono">
-                      {activeHintLevel < 1 ? 'Locked' : 'Unlock (-15 pts)'}
+                      {activeHintLevel < 1 ? 'Locked' : settings.practiceMode ? 'Free' : 'Unlock (-15 pts)'}
                     </span>
                   </button>
                 )}
               </div>
 
-              {/* Hint 3: Key Anagram / Scramble */}
+              {/* Hint 3 */}
               <div className="rounded-xl border border-slate-700/70 bg-slate-800/50 overflow-hidden">
                 {activeHintLevel >= 3 ? (
                   <div className="p-3 text-sm text-purple-200 bg-purple-500/10 flex items-start gap-2.5">
@@ -323,7 +585,7 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
                   <button
                     onClick={() => handleUnlockHint(3)}
                     disabled={activeHintLevel < 2}
-                    className={`w-full px-4 py-2.5 text-xs font-bold flex items-center justify-between transition-colors ${
+                    className={`w-full px-4 py-2 text-xs font-bold flex items-center justify-between transition-colors ${
                       activeHintLevel < 2 
                         ? 'text-slate-600 cursor-not-allowed bg-slate-900/40' 
                         : 'text-slate-300 hover:text-purple-400 hover:bg-slate-700/50'
@@ -331,7 +593,7 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
                   >
                     <span>🔠 Hint 3: Letter Scramble Clue</span>
                     <span className="text-purple-400 text-[11px] font-mono">
-                      {activeHintLevel < 2 ? 'Locked' : 'Unlock (-15 pts)'}
+                      {activeHintLevel < 2 ? 'Locked' : settings.practiceMode ? 'Free' : 'Unlock (-15 pts)'}
                     </span>
                   </button>
                 )}
@@ -340,10 +602,10 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
           </div>
         )}
 
-        {/* UNSOLVED: Input Guessing Section */}
+        {/* UNSOLVED: Input Guessing Section with 3 Tabs */}
         {!isSolved && (
           <div className="px-6 pt-2 pb-6 border-t border-slate-700/40 bg-slate-900/40">
-            {/* Input Mode Tabs: Type vs Multiple Choice */}
+            {/* Input Mode Selector: Type / 4 Choices / Letter Tiles */}
             <div className="flex items-center justify-between mb-4">
               <div className="text-xs font-bold text-slate-300">Your Answer</div>
 
@@ -366,12 +628,21 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
                   <ListFilter className="w-3.5 h-3.5" />
                   <span>4 Choices</span>
                 </button>
+                <button
+                  onClick={() => { sound.playClick(); setInputMode('tiles'); }}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                    inputMode === 'tiles' ? 'bg-amber-500 text-slate-950 shadow-sm' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Grid className="w-3.5 h-3.5" />
+                  <span>Tiles</span>
+                </button>
               </div>
             </div>
 
             {/* Mode 1: Typing Input */}
             {inputMode === 'type' && (
-              <form onSubmit={handleGuessSubmit} className="space-y-3">
+              <form onSubmit={(e) => { e.preventDefault(); handleGuessSubmit(); }} className="space-y-3">
                 <div className="relative">
                   <input
                     ref={inputRef}
@@ -398,25 +669,31 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
             {inputMode === 'mcq' && (
               <div className="space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {riddle.options.map((option, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => {
-                        sound.playClick();
-                        setSelectedMCQ(option);
-                      }}
-                      className={`p-3.5 rounded-2xl border text-left text-sm md:text-base font-bold transition-all flex items-center justify-between ${
-                        selectedMCQ === option
-                          ? 'bg-amber-500/20 border-amber-400 text-amber-300 ring-2 ring-amber-400/30'
-                          : 'bg-slate-800/80 hover:bg-slate-700/60 border-slate-700 text-slate-200'
-                      }`}
-                    >
-                      <span>{option}</span>
-                      <span className="w-5 h-5 rounded-full border border-slate-600 flex items-center justify-center text-xs font-mono text-slate-400">
-                        {String.fromCharCode(65 + idx)}
-                      </span>
-                    </button>
-                  ))}
+                  {riddle.options.map((option, idx) => {
+                    const isEliminated = eliminatedOptions.includes(option);
+                    return (
+                      <button
+                        key={idx}
+                        disabled={isEliminated}
+                        onClick={() => {
+                          sound.playClick();
+                          setSelectedMCQ(option);
+                        }}
+                        className={`p-3.5 rounded-2xl border text-left text-sm md:text-base font-bold transition-all flex items-center justify-between ${
+                          isEliminated
+                            ? 'opacity-25 bg-slate-900 border-dashed border-slate-700 cursor-not-allowed line-through'
+                            : selectedMCQ === option
+                            ? 'bg-amber-500/20 border-amber-400 text-amber-300 ring-2 ring-amber-400/30'
+                            : 'bg-slate-800/80 hover:bg-slate-700/60 border-slate-700 text-slate-200'
+                        }`}
+                      >
+                        <span>{option}</span>
+                        <span className="w-5 h-5 rounded-full border border-slate-600 flex items-center justify-center text-xs font-mono text-slate-400">
+                          {String.fromCharCode(65 + idx)}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <button
@@ -427,6 +704,41 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
                   <span>Submit Selected Answer</span>
                   <Send className="w-4 h-4" />
                 </button>
+              </div>
+            )}
+
+            {/* Mode 3: Interactive Letter Tiles Bank */}
+            {inputMode === 'tiles' && (
+              <div className="space-y-4">
+                {/* Placed target slots */}
+                <div className="flex flex-wrap items-center justify-center gap-1.5">
+                  {placedLetterTiles.map((char, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handlePlacedTileTap(idx)}
+                      className={`w-10 h-12 md:w-11 md:h-13 rounded-xl border-2 font-black text-lg flex items-center justify-center transition-all ${
+                        char
+                          ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md'
+                          : 'bg-slate-800/80 border-dashed border-slate-700 text-transparent'
+                      }`}
+                    >
+                      {char}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Bank letters to tap */}
+                <div className="flex flex-wrap items-center justify-center gap-1.5 pt-2 border-t border-slate-800">
+                  {bankLetterTiles.map((tile) => (
+                    <button
+                      key={tile.id}
+                      onClick={() => handleBankTileTap(tile)}
+                      className="w-10 h-12 md:w-11 md:h-13 rounded-xl bg-slate-700 hover:bg-slate-600 border border-slate-600 text-slate-100 font-black text-lg flex items-center justify-center shadow-md active:scale-95 transition-all"
+                    >
+                      {tile.char}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -444,14 +756,12 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
                   }`}
                 >
                   <span>{feedback.message}</span>
-                  {feedback.type === 'error' && (
-                    <button
-                      onClick={() => setFeedback(null)}
-                      className="text-rose-400 hover:text-rose-200 underline text-[11px]"
-                    >
-                      Dismiss
-                    </button>
-                  )}
+                  <button
+                    onClick={() => setFeedback(null)}
+                    className="underline text-[11px] ml-2 opacity-80 hover:opacity-100"
+                  >
+                    Dismiss
+                  </button>
                 </motion.div>
               )}
             </AnimatePresence>
