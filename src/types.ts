@@ -1,0 +1,54 @@
+export type RiddleCategory = 
+  | 'Logic & Mind Benders'
+  | 'Science & Nature'
+  | 'Math & Numbers'
+  | 'Wordplay & Clever Puns'
+  | 'Everyday Mysteries';
+
+export type RiddleDifficulty = 'Easy' | 'Medium' | 'Brain Buster';
+
+export interface Riddle {
+  id: number;
+  question: string;
+  answer: string;
+  acceptableAnswers: string[];
+  category: RiddleCategory;
+  difficulty: RiddleDifficulty;
+  options: string[]; // 4 choices for multiple-choice mode
+  hint1: string; // Subtle clue / category riddle
+  hint2: string; // Letter length & structure
+  hint3: string; // Anagram or key letter hint
+  explanation: string; // Why it makes sense & educational fun fact
+  realmName: string; // e.g. "Forest of Logic"
+}
+
+export interface RiddleSolveRecord {
+  solved: boolean;
+  hintsUsed: number;
+  attempts: number;
+  scoreEarned: number;
+  solvedAt?: number;
+  solvedWithMCQ?: boolean;
+}
+
+export interface UserStats {
+  playerName: string;
+  avatar: string;
+  totalScore: number;
+  streak: number;
+  bestStreak: number;
+  solvedIds: number[];
+  records: Record<number, RiddleSolveRecord>;
+  unlockedBadges: string[];
+  soundEnabled: boolean;
+}
+
+export interface Badge {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  isUnlocked: (stats: UserStats) => boolean;
+}
+
+export type ActiveTab = 'quest' | 'grid' | 'speedrun' | 'duo' | 'badges';

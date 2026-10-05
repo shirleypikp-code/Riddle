@@ -1,0 +1,6 @@
+{
+  "name": "BrainSpark 50: Primary 6 Riddle Quest",
+  "description": "An interactive, animated quest with 50 clever riddles designed for Primary 6 students. Features progressive hints, scoreboard, badges, 2-player mode, and animated reveals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
