@@ -1,7 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Riddle, RiddleSolveRecord, GameSettings, Powerups } from '../types';
 import { RiddleCard } from './RiddleCard';
 import { sound } from '../utils/audio';
+import { CHAPTER_CONFIG } from '../data/riddles';
+import { isChapterUnlocked, getChapterStats, REQUIRED_CORRECT, QUESTIONS_PER_CHAPTER } from '../utils/chapterGates';
+import { Lock, Sparkles, AlertCircle, ArrowLeft } from 'lucide-react';
 
 interface QuestModeProps {
   riddles: Riddle[];
@@ -33,56 +36,77 @@ export const QuestMode: React.FC<QuestModeProps> = ({
   onPrev,
 }) => {
   const currentRiddle = riddles[currentIndex] || riddles[0];
+  const [lockedModalChapter, setLockedModalChapter] = useState<number | null>(null);
 
-  const realms = [
-    { name: 'The Logic Forest', icon: '🌲', start: 1, end: 10, color: 'from-emerald-500/20 to-teal-500/10' },
-    { name: 'The Science Lab', icon: '🔬', start: 11, end: 20, color: 'from-cyan-500/20 to-blue-500/10' },
-    { name: 'The Number Nexus', icon: '📐', start: 21, end: 30, color: 'from-amber-500/20 to-orange-500/10' },
-    { name: 'The Word Vault', icon: '📚', start: 31, end: 40, color: 'from-purple-500/20 to-pink-500/10' },
-    { name: 'The Mystery Citadel', icon: '🏰', start: 41, end: 50, color: 'from-rose-500/20 to-red-500/10' },
-  ];
+  const currentChapterConfig = CHAPTER_CONFIG.find(c => c.chapter === currentRiddle.chapter) || CHAPTER_CONFIG[0];
 
-  // Determine which realm the current riddle belongs to
-  const currentRealm = realms.find(
-    r => currentRiddle.id >= r.start && currentRiddle.id <= r.end
-  ) || realms[0];
+  const handleSelectChapter = (chapterNum: number) => {
+    const gate = isChapterUnlocked(chapterNum, solvedIds);
+    if (!gate.unlocked) {
+      sound.playWrong();
+      setLockedModalChapter(chapterNum);
+      return;
+    }
+
+    sound.playClick();
+    const config = CHAPTER_CONFIG.find(c => c.chapter === chapterNum) || CHAPTER_CONFIG[0];
+    onSelectIndex(config.range[0] - 1);
+  };
 
   return (
     <div className="space-y-4">
-      {/* Realm Selection Tabs */}
-      <div className="max-w-4xl mx-auto px-4 pt-2">
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
-          {realms.map((realm) => {
-            const realmRiddles = riddles.slice(realm.start - 1, realm.end);
-            const realmSolved = realmRiddles.filter(r => solvedIds.includes(r.id)).length;
-            const isCurrent = currentRealm.name === realm.name;
+      {/* 5 Chapters Navigation Carousel / Grid */}
+      <div className="max-w-5xl mx-auto px-4 pt-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
+          {CHAPTER_CONFIG.map((chap) => {
+            const gate = isChapterUnlocked(chap.chapter, solvedIds);
+            const stats = getChapterStats(chap.chapter, solvedIds);
+            const isCurrent = currentChapterConfig.chapter === chap.chapter;
 
             return (
               <button
-                key={realm.name}
-                onClick={() => {
-                  sound.playClick();
-                  onSelectIndex(realm.start - 1);
-                }}
-                className={`p-2.5 rounded-2xl border text-left transition-all ${
+                key={chap.chapter}
+                onClick={() => handleSelectChapter(chap.chapter)}
+                className={`p-3 rounded-2xl border text-left transition-all relative overflow-hidden select-none ${
                   isCurrent
-                    ? 'bg-slate-800 border-amber-400 ring-2 ring-amber-400/20 shadow-md'
-                    : 'bg-slate-800/40 hover:bg-slate-800 border-slate-700/60 opacity-80 hover:opacity-100'
+                    ? 'bg-slate-800 border-amber-400 ring-2 ring-amber-400/20 shadow-lg scale-102'
+                    : gate.unlocked
+                    ? 'bg-slate-800/60 hover:bg-slate-800 border-slate-700/80 hover:border-slate-600'
+                    : 'bg-slate-900/60 border-dashed border-slate-800 opacity-60 hover:opacity-80'
                 }`}
               >
-                <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="text-lg">{realm.icon}</span>
-                  <span className="font-mono text-[10px] font-black text-amber-400">
-                    {realmSolved}/{realm.end - realm.start + 1}
-                  </span>
+                <div className="flex items-center justify-between text-xs mb-1.5">
+                  <span className="text-xl">{chap.icon}</span>
+                  {gate.unlocked ? (
+                    <span className={`font-mono text-[10px] font-black ${stats.isComplete ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {stats.solvedCount}/{QUESTIONS_PER_CHAPTER}
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded">
+                      <Lock className="w-3 h-3 text-rose-400" />
+                      <span>Lock</span>
+                    </span>
+                  )}
                 </div>
-                <div className="text-xs font-bold text-slate-200 truncate">
-                  {realm.name}
+
+                <div className="text-xs font-black text-slate-200 truncate">
+                  Ch. {chap.chapter}: {chap.name}
                 </div>
-                <div className="w-full bg-slate-700 h-1.5 rounded-full overflow-hidden mt-2">
+                <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                  {chap.difficultyLabel}
+                </div>
+
+                {/* Progress bar */}
+                <div className="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden mt-2 border border-slate-700/40">
                   <div
-                    className="bg-amber-400 h-full rounded-full transition-all duration-300"
-                    style={{ width: `${(realmSolved / 10) * 100}%` }}
+                    className={`h-full rounded-full transition-all duration-300 ${
+                      stats.isComplete
+                        ? 'bg-emerald-400'
+                        : stats.percentage >= 50
+                        ? 'bg-amber-400'
+                        : 'bg-cyan-500'
+                    }`}
+                    style={{ width: `${(stats.solvedCount / QUESTIONS_PER_CHAPTER) * 100}%` }}
                   />
                 </div>
               </button>
@@ -90,12 +114,12 @@ export const QuestMode: React.FC<QuestModeProps> = ({
           })}
         </div>
 
-        {/* Quick horizontal stepper for the 10 riddles in current realm */}
-        <div className="flex items-center justify-center gap-1.5 mt-3 py-2 overflow-x-auto">
+        {/* 20 Questions Stepper for Current Chapter */}
+        <div className="flex items-center justify-center gap-1 mt-3 py-2 overflow-x-auto no-scrollbar">
           {riddles
-            .slice(currentRealm.start - 1, currentRealm.end)
+            .slice(currentChapterConfig.range[0] - 1, currentChapterConfig.range[1])
             .map((r, i) => {
-              const rIndex = currentRealm.start - 1 + i;
+              const rIndex = currentChapterConfig.range[0] - 1 + i;
               const isSelected = rIndex === currentIndex;
               const isSolved = solvedIds.includes(r.id);
 
@@ -106,7 +130,7 @@ export const QuestMode: React.FC<QuestModeProps> = ({
                     sound.playClick();
                     onSelectIndex(rIndex);
                   }}
-                  className={`w-8 h-8 rounded-xl font-mono text-xs font-black transition-all flex items-center justify-center ${
+                  className={`min-w-[32px] h-8 rounded-xl font-mono text-xs font-black transition-all flex items-center justify-center ${
                     isSelected
                       ? 'bg-amber-400 text-slate-950 scale-110 shadow-md shadow-amber-400/25 ring-2 ring-amber-300'
                       : isSolved
@@ -137,6 +161,43 @@ export const QuestMode: React.FC<QuestModeProps> = ({
         onPrev={onPrev}
         onSelectIndex={onSelectIndex}
       />
+
+      {/* Chapter Gate Modal (Shown when clicking locked chapter) */}
+      {lockedModalChapter && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="w-full max-w-md p-6 rounded-3xl bg-slate-900 border-2 border-rose-500/50 shadow-2xl text-center">
+            <div className="w-16 h-16 mx-auto rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center text-3xl mb-3 shadow-inner">
+              🔒
+            </div>
+
+            <div className="text-xs font-bold uppercase tracking-wider text-rose-400 mb-1">
+              Chapter {lockedModalChapter} Locked
+            </div>
+
+            <h3 className="text-xl font-black text-white mb-2">
+              95% Mastery Required to Proceed
+            </h3>
+
+            <p className="text-xs text-slate-300 leading-relaxed mb-6">
+              To proceed to Chapter {lockedModalChapter}, you must solve at least <strong>95% ({REQUIRED_CORRECT} out of {QUESTIONS_PER_CHAPTER} questions)</strong> in Chapter {lockedModalChapter - 1}.
+              <br /><br />
+              <span className="text-amber-400 font-bold">
+                Solve {isChapterUnlocked(lockedModalChapter, solvedIds).remainingToUnlock} more question(s) in Chapter {lockedModalChapter - 1} to unlock this gate!
+              </span>
+            </p>
+
+            <button
+              onClick={() => {
+                sound.playClick();
+                setLockedModalChapter(null);
+              }}
+              className="w-full py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white font-black text-xs transition-colors"
+            >
+              Back to Active Chapter
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

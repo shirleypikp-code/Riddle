@@ -4,10 +4,13 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { RIDDLES, BADGES_LIST } from './data/riddles';
-import { ActiveTab, UserStats, GameSettings, Powerups } from './types';
+import { RIDDLES, BADGES_LIST, CHAPTER_CONFIG } from './data/riddles';
+import { ActiveTab, UserStats, GameSettings, Powerups, RiddleSticker } from './types';
 import { Navbar } from './components/Navbar';
 import { QuestMode } from './components/QuestMode';
+import { StickerAlbum } from './components/StickerAlbum';
+import { StickerModal } from './components/StickerModal';
+import { FriendChallenge } from './components/FriendChallenge';
 import { RiddleGrid } from './components/RiddleGrid';
 import { MiniGamesHub } from './components/minigames/MiniGamesHub';
 import { SpeedRunMode } from './components/SpeedRunMode';
@@ -17,8 +20,9 @@ import { PrintWorksheetModal } from './components/PrintWorksheetModal';
 import { AvatarModal } from './components/AvatarModal';
 import { OptionsMenu } from './components/OptionsMenu';
 import { sound } from './utils/audio';
+import { isChapterUnlocked, REQUIRED_CORRECT } from './utils/chapterGates';
 
-const STORAGE_KEY = 'brainspark_p6_riddles_v2';
+const STORAGE_KEY = 'brainspark_p6_riddles_v3_100';
 
 const defaultSettings: GameSettings = {
   practiceMode: false,
@@ -30,19 +34,20 @@ const defaultSettings: GameSettings = {
 };
 
 const defaultPowerups: Powerups = {
-  fiftyFifty: 2,
-  letterReveal: 2,
-  freeHint: 2,
+  fiftyFifty: 3,
+  letterReveal: 3,
+  freeHint: 3,
 };
 
 const defaultStats: UserStats = {
   playerName: 'P6 Sleuth',
   avatar: '🦉',
   totalScore: 0,
-  gems: 25, // Starter gems for students to test lifelines and mini-games!
+  gems: 30, // Starter gems for students
   streak: 0,
   bestStreak: 0,
   solvedIds: [],
+  unlockedStickers: [],
   records: {},
   unlockedBadges: [],
   soundEnabled: true,
@@ -59,6 +64,7 @@ export default function App() {
         return {
           ...defaultStats,
           ...parsed,
+          unlockedStickers: parsed.unlockedStickers || parsed.solvedIds || [],
           powerups: { ...defaultPowerups, ...(parsed.powerups || {}) },
           settings: { ...defaultSettings, ...(parsed.settings || {}) },
         };
@@ -71,9 +77,27 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('quest');
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  // Modals
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
   const [isOptionsModalOpen, setIsOptionsModalOpen] = useState(false);
+
+  // Sticker Reward Modal
+  const [newlyUnlockedSticker, setNewlyUnlockedSticker] = useState<{
+    sticker: RiddleSticker;
+    riddleId: number;
+  } | null>(null);
+
+  // Check URL query parameters for incoming friend challenge on initial load
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('challenge')) {
+        setActiveTab('friends');
+      }
+    }
+  }, []);
 
   // Filter riddles by difficulty or category if configured in settings
   const filteredRiddles = RIDDLES.filter((r) => {
@@ -107,13 +131,7 @@ export default function App() {
 
     BADGES_LIST.forEach((badge) => {
       if (!unlocked.includes(badge.id)) {
-        const canUnlock = badge.check(
-          newStats.solvedIds.length,
-          newStats.bestStreak,
-          newStats.solvedIds,
-          newStats.records
-        );
-        if (canUnlock) {
+        if (badge.isUnlocked(newStats)) {
           unlocked.push(badge.id);
           newlyAwarded = true;
         }
@@ -132,9 +150,15 @@ export default function App() {
     scoreEarned: number,
     usedMCQ: boolean
   ) => {
+    const currentRiddleData = RIDDLES.find((r) => r.id === riddleId);
+
     setStats((prev) => {
       const alreadySolved = prev.solvedIds.includes(riddleId);
       const newSolvedIds = alreadySolved ? prev.solvedIds : [...prev.solvedIds, riddleId];
+      const newStickers = prev.unlockedStickers?.includes(riddleId)
+        ? prev.unlockedStickers
+        : [...(prev.unlockedStickers || []), riddleId];
+
       const newStreak = scoreEarned > 0 ? prev.streak + 1 : 0;
       const newBestStreak = Math.max(prev.bestStreak, newStreak);
       const newScore = prev.totalScore + scoreEarned;
@@ -159,8 +183,27 @@ export default function App() {
         streak: newStreak,
         bestStreak: newBestStreak,
         solvedIds: newSolvedIds,
+        unlockedStickers: newStickers,
         records: updatedRecords,
       };
+
+      // Check if this answer just completed a chapter (reached 19/20)
+      if (currentRiddleData && !alreadySolved) {
+        const chapRiddles = RIDDLES.filter((r) => r.chapter === currentRiddleData.chapter);
+        const chapSolvedNow = chapRiddles.filter((r) => newSolvedIds.includes(r.id)).length;
+        if (chapSolvedNow === REQUIRED_CORRECT) {
+          // Just unlocked the next chapter! Play chapter fanfare!
+          setTimeout(() => sound.playChapterUnlock(), 800);
+        }
+      }
+
+      // Show sticker unlock modal on first solve!
+      if (!alreadySolved && currentRiddleData?.sticker) {
+        setNewlyUnlockedSticker({
+          sticker: currentRiddleData.sticker,
+          riddleId,
+        });
+      }
 
       const updatedBadges = checkBadges(intermediateStats);
       return {
@@ -262,6 +305,13 @@ export default function App() {
 
   const handleNextRiddle = () => {
     if (currentIndex < filteredRiddles.length - 1) {
+      const nextRiddle = filteredRiddles[currentIndex + 1];
+      // Check if next riddle is in a locked chapter
+      const gate = isChapterUnlocked(nextRiddle.chapter, stats.solvedIds);
+      if (!gate.unlocked) {
+        sound.playWrong();
+        return;
+      }
       setCurrentIndex((prev) => prev + 1);
     }
   };
@@ -275,6 +325,13 @@ export default function App() {
   const handleSelectRiddleFromGrid = (id: number) => {
     const targetIdx = filteredRiddles.findIndex((r) => r.id === id);
     if (targetIdx !== -1) {
+      const targetRiddle = filteredRiddles[targetIdx];
+      const gate = isChapterUnlocked(targetRiddle.chapter, stats.solvedIds);
+      if (!gate.unlocked) {
+        sound.playWrong();
+        setActiveTab('quest');
+        return;
+      }
       setCurrentIndex(targetIdx);
       setActiveTab('quest');
     }
@@ -316,6 +373,20 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'stickers' && (
+          <StickerAlbum
+            unlockedStickers={stats.unlockedStickers || stats.solvedIds}
+            onSelectRiddle={handleSelectRiddleFromGrid}
+          />
+        )}
+
+        {activeTab === 'friends' && (
+          <FriendChallenge
+            stats={stats}
+            onReward={(pts, g) => handleMiniGameReward(pts, g)}
+          />
+        )}
+
         {activeTab === 'minigames' && (
           <MiniGamesHub
             riddles={RIDDLES}
@@ -346,18 +417,25 @@ export default function App() {
       <footer className="border-t border-slate-800/80 bg-slate-950/60 py-4 text-center text-xs text-slate-500">
         <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div>
-            BrainSpark 50 • Designed for Primary 6 / Grade 6 Students
+            BrainSpark 100 • Primary 6 Academic Riddle Quest
           </div>
           <div className="flex items-center gap-4 text-slate-400">
-            <span>✨ 50 Curated Riddles</span>
-            <span>🎮 4 Mini-Games</span>
-            <span>💎 Lifelines & Power-Ups</span>
-            <span>🏆 8 Badges</span>
+            <span>📚 5 Chapters (20 Qs each)</span>
+            <span>🔒 95% Gates</span>
+            <span>🌟 100 Collectible Stickers</span>
+            <span>👥 Friend Multiplayer</span>
           </div>
         </div>
       </footer>
 
       {/* Modals */}
+      <StickerModal
+        isOpen={Boolean(newlyUnlockedSticker)}
+        sticker={newlyUnlockedSticker?.sticker || null}
+        riddleId={newlyUnlockedSticker?.riddleId || 1}
+        onClose={() => setNewlyUnlockedSticker(null)}
+      />
+
       <OptionsMenu
         isOpen={isOptionsModalOpen}
         onClose={() => setIsOptionsModalOpen(false)}

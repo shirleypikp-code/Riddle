@@ -3,12 +3,22 @@ export type RiddleCategory =
   | 'Science & Nature'
   | 'Math & Numbers'
   | 'Wordplay & Clever Puns'
-  | 'Everyday Mysteries';
+  | 'Everyday Mysteries'
+  | 'History & Lore'
+  | 'Space & Earth';
 
-export type RiddleDifficulty = 'Easy' | 'Medium' | 'Brain Buster';
+export type RiddleDifficulty = 'Easy' | 'Medium' | 'Hard' | 'Brain Buster';
+
+export interface RiddleSticker {
+  emoji: string;
+  name: string;
+  rarity: 'Common' | 'Rare' | 'Epic' | 'Legendary';
+  quote: string;
+}
 
 export interface Riddle {
   id: number;
+  chapter: number; // 1 to 5 (20 questions per chapter)
   question: string;
   answer: string;
   acceptableAnswers: string[];
@@ -19,7 +29,8 @@ export interface Riddle {
   hint2: string; // Letter length & structure
   hint3: string; // Anagram or key letter hint
   explanation: string; // Why it makes sense & educational fun fact
-  realmName: string; // e.g. "Forest of Logic"
+  realmName: string; // Chapter theme name
+  sticker: RiddleSticker;
 }
 
 export interface RiddleSolveRecord {
@@ -41,7 +52,7 @@ export interface GameSettings {
   practiceMode: boolean;       // Free hints without score deduction
   defaultInputMode: 'type' | 'mcq' | 'tiles'; // Default guessing mode
   timerEnabled: boolean;       // Optional 45s timer per riddle for challenge
-  difficultyFilter: 'All' | 'Easy' | 'Medium' | 'Brain Buster';
+  difficultyFilter: 'All' | 'Easy' | 'Medium' | 'Hard' | 'Brain Buster';
   categoryFilter: string;      // 'All' or specific category
   readAloudAuto: boolean;      // Automatically speak riddles
 }
@@ -54,6 +65,7 @@ export interface UserStats {
   streak: number;
   bestStreak: number;
   solvedIds: number[];
+  unlockedStickers: number[]; // Riddle IDs of unlocked stickers
   records: Record<number, RiddleSolveRecord>;
   unlockedBadges: string[];
   soundEnabled: boolean;
@@ -69,4 +81,12 @@ export interface Badge {
   isUnlocked: (stats: UserStats) => boolean;
 }
 
-export type ActiveTab = 'quest' | 'grid' | 'minigames' | 'speedrun' | 'duo' | 'badges';
+export interface FriendChallengeData {
+  code: string;
+  creatorName: string;
+  riddleIds: number[];
+  timeLimitSec: number;
+  createdAt: number;
+}
+
+export type ActiveTab = 'quest' | 'stickers' | 'friends' | 'grid' | 'minigames' | 'speedrun' | 'duo' | 'badges';

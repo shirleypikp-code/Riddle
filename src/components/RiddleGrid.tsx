@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Search, CheckCircle2, Lock, Sparkles, Filter } from 'lucide-react';
 import { Riddle, UserStats } from '../types';
+import { CHAPTER_CONFIG } from '../data/riddles';
 import { sound } from '../utils/audio';
 
 interface RiddleGridProps {
@@ -15,16 +16,8 @@ export const RiddleGrid: React.FC<RiddleGridProps> = ({
   onSelectRiddle,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedRealm, setSelectedRealm] = useState<string>('all');
+  const [selectedChapter, setSelectedChapter] = useState<number | 'all'>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | 'solved' | 'unsolved'>('all');
-
-  const realms = [
-    'The Logic Forest',
-    'The Science Lab',
-    'The Number Nexus',
-    'The Word Vault',
-    'The Mystery Citadel'
-  ];
 
   const filteredRiddles = useMemo(() => {
     return riddles.filter(r => {
@@ -34,10 +27,11 @@ export const RiddleGrid: React.FC<RiddleGridProps> = ({
         r.question.toLowerCase().includes(query) || 
         r.answer.toLowerCase().includes(query) ||
         r.category.toLowerCase().includes(query) ||
+        r.sticker.name.toLowerCase().includes(query) ||
         String(r.id) === query;
 
-      // Realm check
-      const matchRealm = selectedRealm === 'all' || r.realmName === selectedRealm;
+      // Chapter check
+      const matchChapter = selectedChapter === 'all' || r.chapter === selectedChapter;
 
       // Solved status check
       const isSolved = stats.solvedIds.includes(r.id);
@@ -46,9 +40,9 @@ export const RiddleGrid: React.FC<RiddleGridProps> = ({
         (filterStatus === 'solved' && isSolved) ||
         (filterStatus === 'unsolved' && !isSolved);
 
-      return matchSearch && matchRealm && matchStatus;
+      return matchSearch && matchChapter && matchStatus;
     });
-  }, [riddles, searchQuery, selectedRealm, filterStatus, stats.solvedIds]);
+  }, [riddles, searchQuery, selectedChapter, filterStatus, stats.solvedIds]);
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6">
@@ -57,13 +51,13 @@ export const RiddleGrid: React.FC<RiddleGridProps> = ({
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h2 className="text-2xl font-black text-slate-100 flex items-center gap-2">
-              <span>All 50 Riddles Directory</span>
+              <span>All 100 Riddles Directory</span>
               <span className="text-sm font-bold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                {stats.solvedIds.length} / 50 Complete
+                {stats.solvedIds.length} / 100 Solved
               </span>
             </h2>
             <p className="text-sm text-slate-400">
-              Browse, filter, and jump directly into any riddle puzzle.
+              Search by question, answer, topic, or sticker name.
             </p>
           </div>
 
@@ -74,7 +68,7 @@ export const RiddleGrid: React.FC<RiddleGridProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search riddles, answers, topics..."
+              placeholder="Search 100 riddles, stickers, answers..."
               className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-amber-400"
             />
           </div>
@@ -82,33 +76,34 @@ export const RiddleGrid: React.FC<RiddleGridProps> = ({
 
         {/* Filters bar */}
         <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800">
-          <div className="flex items-center gap-1.5 text-xs text-slate-400 mr-2">
+          <div className="flex items-center gap-1.5 text-xs text-slate-400 mr-1">
             <Filter className="w-3.5 h-3.5" />
-            <span className="font-bold">Realms:</span>
+            <span className="font-bold">Chapters:</span>
           </div>
 
           <button
-            onClick={() => { sound.playClick(); setSelectedRealm('all'); }}
+            onClick={() => { sound.playClick(); setSelectedChapter('all'); }}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              selectedRealm === 'all'
-                ? 'bg-amber-500 text-slate-950'
+              selectedChapter === 'all'
+                ? 'bg-amber-500 text-slate-950 shadow-md'
                 : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
             }`}
           >
-            All Realms (50)
+            All 5 Chapters (100)
           </button>
 
-          {realms.map(realm => (
+          {CHAPTER_CONFIG.map(chap => (
             <button
-              key={realm}
-              onClick={() => { sound.playClick(); setSelectedRealm(realm); }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                selectedRealm === realm
-                  ? 'bg-amber-500 text-slate-950'
+              key={chap.chapter}
+              onClick={() => { sound.playClick(); setSelectedChapter(chap.chapter); }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                selectedChapter === chap.chapter
+                  ? 'bg-amber-500 text-slate-950 shadow-md'
                   : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
               }`}
             >
-              {realm}
+              <span>{chap.icon}</span>
+              <span>Ch. {chap.chapter}</span>
             </button>
           ))}
 
@@ -155,7 +150,7 @@ export const RiddleGrid: React.FC<RiddleGridProps> = ({
                 sound.playClick();
                 onSelectRiddle(riddle.id);
               }}
-              className={`text-left p-4 rounded-2xl border transition-all duration-200 relative group flex flex-col justify-between h-48 ${
+              className={`text-left p-4 rounded-2xl border transition-all duration-200 relative group flex flex-col justify-between h-52 select-none ${
                 isSolved
                   ? 'bg-gradient-to-br from-emerald-950/40 via-slate-800 to-slate-900 border-emerald-500/40 hover:border-emerald-400'
                   : 'bg-slate-800/70 hover:bg-slate-800 border-slate-700/80 hover:border-amber-400/60'
@@ -163,8 +158,9 @@ export const RiddleGrid: React.FC<RiddleGridProps> = ({
             >
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-mono text-xs font-black text-amber-400">
-                    #{riddle.id}
+                  <span className="font-mono text-xs font-black text-amber-400 flex items-center gap-1.5">
+                    <span>#{riddle.id}</span>
+                    <span className="text-[10px] text-slate-500 font-sans">Ch.{riddle.chapter}</span>
                   </span>
 
                   {isSolved ? (
@@ -173,7 +169,12 @@ export const RiddleGrid: React.FC<RiddleGridProps> = ({
                       <span>+{record?.scoreEarned ?? 0}</span>
                     </span>
                   ) : (
-                    <span className="text-[10px] uppercase font-bold text-slate-500 bg-slate-700/40 px-2 py-0.5 rounded-full">
+                    <span className={`text-[10px] uppercase font-extrabold px-2 py-0.5 rounded-full ${
+                      riddle.difficulty === 'Easy' ? 'bg-emerald-500/10 text-emerald-400' :
+                      riddle.difficulty === 'Medium' ? 'bg-cyan-500/10 text-cyan-400' :
+                      riddle.difficulty === 'Hard' ? 'bg-purple-500/10 text-purple-400' :
+                      'bg-rose-500/10 text-rose-400'
+                    }`}>
                       {riddle.difficulty}
                     </span>
                   )}
@@ -184,14 +185,19 @@ export const RiddleGrid: React.FC<RiddleGridProps> = ({
                 </p>
               </div>
 
-              <div className="pt-2 border-t border-slate-700/50 flex items-center justify-between text-[11px] text-slate-400">
-                <span className="truncate max-w-[130px]">{riddle.realmName}</span>
+              {/* Bottom sticker & action bar */}
+              <div className="pt-2.5 border-t border-slate-700/50 flex items-center justify-between text-[11px] text-slate-400">
+                <div className="flex items-center gap-1.5 truncate max-w-[130px]">
+                  <span className="text-base leading-none">{riddle.sticker.emoji}</span>
+                  <span className="truncate text-[10px] font-bold">{riddle.sticker.name}</span>
+                </div>
+
                 {isSolved ? (
-                  <span className="font-bold text-emerald-400 truncate max-w-[90px]">
+                  <span className="font-bold text-emerald-400 truncate max-w-[80px]">
                     {riddle.answer}
                   </span>
                 ) : (
-                  <span className="text-amber-400/80 group-hover:text-amber-300 font-bold">
+                  <span className="text-amber-400 group-hover:text-amber-300 font-bold">
                     Solve &rarr;
                   </span>
                 )}

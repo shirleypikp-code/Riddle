@@ -15,13 +15,18 @@ export const PrintWorksheetModal: React.FC<PrintWorksheetModalProps> = ({
   riddles,
 }) => {
   const [includeAnswers, setIncludeAnswers] = useState(false);
-  const [selectedRange, setSelectedRange] = useState<'all' | '1-25' | '26-50'>('all');
+  const [selectedRange, setSelectedRange] = useState<string>('all');
 
   if (!isOpen) return null;
 
   const getFilteredRiddles = () => {
-    if (selectedRange === '1-25') return riddles.slice(0, 25);
-    if (selectedRange === '26-50') return riddles.slice(25, 50);
+    if (selectedRange === 'ch1') return riddles.slice(0, 20);
+    if (selectedRange === 'ch2') return riddles.slice(20, 40);
+    if (selectedRange === 'ch3') return riddles.slice(40, 60);
+    if (selectedRange === 'ch4') return riddles.slice(60, 80);
+    if (selectedRange === 'ch5') return riddles.slice(80, 100);
+    if (selectedRange === '1-50') return riddles.slice(0, 50);
+    if (selectedRange === '51-100') return riddles.slice(50, 100);
     return riddles;
   };
 
@@ -46,7 +51,7 @@ export const PrintWorksheetModal: React.FC<PrintWorksheetModalProps> = ({
                 Print Classroom Worksheet
               </h3>
               <p className="text-xs text-slate-400">
-                Generate printer-friendly riddle challenge sheets for Primary 6.
+                Print riddle worksheets and master answer keys for Primary 6.
               </p>
             </div>
           </div>
@@ -61,34 +66,22 @@ export const PrintWorksheetModal: React.FC<PrintWorksheetModalProps> = ({
 
         {/* Modal Controls */}
         <div className="px-6 py-4 bg-slate-800/60 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4 text-xs font-bold">
-          <div className="flex items-center gap-3">
-            <span className="text-slate-400">Range:</span>
-            <div className="flex rounded-xl bg-slate-800 p-1 border border-slate-700">
-              <button
-                onClick={() => setSelectedRange('all')}
-                className={`px-3 py-1 rounded-lg transition-all ${
-                  selectedRange === 'all' ? 'bg-sky-500 text-slate-950' : 'text-slate-300'
-                }`}
-              >
-                All 50
-              </button>
-              <button
-                onClick={() => setSelectedRange('1-25')}
-                className={`px-3 py-1 rounded-lg transition-all ${
-                  selectedRange === '1-25' ? 'bg-sky-500 text-slate-950' : 'text-slate-300'
-                }`}
-              >
-                1 to 25
-              </button>
-              <button
-                onClick={() => setSelectedRange('26-50')}
-                className={`px-3 py-1 rounded-lg transition-all ${
-                  selectedRange === '26-50' ? 'bg-sky-500 text-slate-950' : 'text-slate-300'
-                }`}
-              >
-                26 to 50
-              </button>
-            </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-slate-400">Selection:</span>
+            <select
+              value={selectedRange}
+              onChange={(e) => setSelectedRange(e.target.value)}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 focus:outline-none"
+            >
+              <option value="all">All 100 Riddles</option>
+              <option value="ch1">Chapter 1 (Q1 - 20) Easy</option>
+              <option value="ch2">Chapter 2 (Q21 - 40) Easy-Med</option>
+              <option value="ch3">Chapter 3 (Q41 - 60) Medium</option>
+              <option value="ch4">Chapter 4 (Q61 - 80) Hard</option>
+              <option value="ch5">Chapter 5 (Q81 - 100) Brain Buster</option>
+              <option value="1-50">Chapters 1 & 2 (1-50)</option>
+              <option value="51-100">Chapters 3, 4 & 5 (51-100)</option>
+            </select>
           </div>
 
           {/* Toggle Answer Key */}
@@ -113,7 +106,7 @@ export const PrintWorksheetModal: React.FC<PrintWorksheetModalProps> = ({
                   Primary 6 Riddle Challenge
                 </h1>
                 <p className="text-xs text-slate-600 mt-1">
-                  {includeAnswers ? 'TEACHER MASTER KEY & EXPLANATIONS' : 'STUDENT WORKSHEET'} • 50 Brain Sparks
+                  {includeAnswers ? 'TEACHER MASTER KEY & EXPLANATIONS' : 'STUDENT WORKSHEET'} • 100 Progressive Brain Sparks
                 </p>
               </div>
               {!includeAnswers && (
@@ -125,8 +118,8 @@ export const PrintWorksheetModal: React.FC<PrintWorksheetModalProps> = ({
             </div>
 
             {/* Questions List */}
-            <div className="space-y-5 text-sm">
-              {printableList.map((r, idx) => (
+            <div className="space-y-4 text-sm">
+              {printableList.map((r) => (
                 <div key={r.id} className="pb-3 border-b border-slate-200">
                   <div className="flex items-start gap-2">
                     <span className="font-bold text-slate-900 min-w-[28px]">
@@ -140,7 +133,7 @@ export const PrintWorksheetModal: React.FC<PrintWorksheetModalProps> = ({
                       {includeAnswers ? (
                         <div className="mt-2 text-xs bg-emerald-50 border border-emerald-300 p-2.5 rounded-lg">
                           <div className="font-black text-emerald-900">
-                            Answer: {r.answer}
+                            Answer: {r.answer} ({r.sticker.name} {r.sticker.emoji})
                           </div>
                           <div className="text-emerald-800 mt-0.5">
                             Explanation: {r.explanation}

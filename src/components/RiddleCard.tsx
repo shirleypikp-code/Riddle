@@ -250,6 +250,7 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
         type: 'success' 
       });
 
+      sound.playStickerUnlock();
       onSolve(riddle.id, activeHintLevel, finalScore, inputMode === 'mcq');
     } else {
       sound.playWrong();
@@ -297,6 +298,7 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
   const difficultyBadge = {
     'Easy': 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
     'Medium': 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    'Hard': 'bg-purple-500/20 text-purple-400 border-purple-500/30',
     'Brain Buster': 'bg-rose-500/20 text-rose-400 border-rose-500/30'
   }[riddle.difficulty];
 
@@ -431,6 +433,26 @@ export const RiddleCard: React.FC<RiddleCardProps> = ({
                   <div className="text-[11px] font-bold text-slate-400 uppercase">Score Earned</div>
                   <div className="text-lg font-black text-emerald-400">
                     +{record?.scoreEarned ?? 0} pts
+                  </div>
+                </div>
+              </div>
+
+              {/* Unlocked Sticker Badge */}
+              <div className="mt-3.5 p-3 rounded-xl bg-slate-900/80 border border-amber-400/40 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="text-3xl w-11 h-11 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center">
+                    {riddle.sticker.emoji}
+                  </div>
+                  <div className="text-left">
+                    <div className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                      <span>Sticker Collected: {riddle.sticker.name}</span>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded font-extrabold uppercase bg-amber-500/20 text-amber-300">
+                        {riddle.sticker.rarity}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 italic">
+                      "{riddle.sticker.quote}"
+                    </div>
                   </div>
                 </div>
               </div>

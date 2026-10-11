@@ -197,15 +197,15 @@ export const OptionsMenu: React.FC<OptionsMenuProps> = ({
               <div className="text-sm font-bold text-slate-200 mb-2">
                 Difficulty Filter
               </div>
-              <div className="grid grid-cols-4 gap-1.5">
-                {(['All', 'Easy', 'Medium', 'Brain Buster'] as const).map((diff) => (
+              <div className="grid grid-cols-5 gap-1.5">
+                {(['All', 'Easy', 'Medium', 'Hard', 'Brain Buster'] as const).map((diff) => (
                   <button
                     key={diff}
                     onClick={() => {
                       sound.playClick();
                       onUpdateSettings({ difficultyFilter: diff });
                     }}
-                    className={`py-2 rounded-xl text-[11px] font-bold border transition-all ${
+                    className={`py-2 rounded-xl text-[10px] font-bold border transition-all ${
                       settings.difficultyFilter === diff
                         ? 'bg-amber-500 text-slate-950 border-amber-400'
                         : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
